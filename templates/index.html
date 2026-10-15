@@ -1,0 +1,607 @@
+{% extends "base.html" %}
+
+{% block title %}{{ config.app_title }} | Budget Dashboard{% endblock %}
+
+{% block content %}
+<div x-data="expenseBoard()" class="space-y-8">
+    <section class="hero-panel rounded-[1.75rem] p-7">
+        <div class="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+            <div>
+                <p class="text-xs uppercase tracking-[0.25em] text-[#4b6ec1]">Financial Clarity</p>
+                <h1 class="mt-2 font-display text-4xl text-[#0f244a] md:text-5xl">Control Everyday Spending</h1>
+                <p class="mt-3 max-w-2xl text-sm leading-relaxed text-[#334b78]">
+                    Track payments, compare category pressure, and keep your monthly budget under control.
+                </p>
+            </div>
+            <div class="budget-chip" :class="pressureToneClass">
+                <p class="chip-label">Budget pressure</p>
+                <p class="chip-value" x-text="pressureLabel"></p>
+            </div>
+        </div>
+    </section>
+
+    <section class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <article class="stat-card">
+            <p class="stat-label">Entries</p>
+            <p class="stat-value" x-text="summary.total"></p>
+        </article>
+        <article class="stat-card">
+            <p class="stat-label">Paid</p>
+            <p class="stat-value" x-text="summary.paid"></p>
+        </article>
+        <article class="stat-card">
+            <p class="stat-label">Open</p>
+            <p class="stat-value" x-text="summary.open"></p>
+        </article>
+        <article class="stat-card">
+            <p class="stat-label">Estimated total</p>
+            <p class="stat-value" x-text="formatCurrency(visibleBudget)"></p>
+        </article>
+    </section>
+
+    <section class="grid gap-6 lg:grid-cols-[370px_1fr] lg:items-start">
+        <aside class="space-y-6">
+            <div class="panel">
+                <h2 class="panel-title">Add expense</h2>
+                <form x-ref="createForm" @submit.prevent="createItem($event)" class="mt-4 space-y-4">
+                    <div>
+                        <label for="title" class="field-label">Merchant or expense name</label>
+                        <input id="title" name="title" required maxlength="140" class="field-input" placeholder="Groceries, SaaS renewals, taxi" />
+                    </div>
+                    <div>
+                        <label for="description" class="field-label">Details</label>
+                        <textarea id="description" name="description" rows="3" maxlength="2000" class="field-input" placeholder="Extra notes, invoice, payment source"></textarea>
+                    </div>
+                    <div class="grid gap-4 sm:grid-cols-2">
+                        <div>
+                            <label for="category" class="field-label">{{ config.category_label }}</label>
+                            <select id="category" name="category" class="field-input">
+                                {% for option in config.category_options %}
+                                <option value="{{ option }}">{{ option }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div>
+                            <label for="status" class="field-label">{{ config.status_label }}</label>
+                            <select id="status" name="status" class="field-input">
+                                {% for option in config.status_options %}
+                                <option value="{{ option }}">{{ option }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="grid gap-4 sm:grid-cols-2">
+                        <div>
+                            <label for="target_date" class="field-label">{{ config.target_date_label }}</label>
+                            <input id="target_date" name="target_date" type="date" class="field-input" />
+                        </div>
+                        <div>
+                            <label for="priority" class="field-label">Amount tier (1-5)</label>
+                            <input id="priority" name="priority" type="number" min="1" max="5" value="3" class="field-input" />
+                        </div>
+                    </div>
+                    <button type="submit" class="primary-btn">Add expense</button>
+                </form>
+            </div>
+
+            <div class="panel">
+                <h2 class="panel-title">Budget cap</h2>
+                <p class="mt-2 text-sm text-[#4b5f89]">Adjust monthly target to monitor spending pressure.</p>
+                <div class="mt-4 space-y-3">
+                    <input
+                        type="range"
+                        min="600"
+                        max="6000"
+                        step="100"
+                        x-model.number="budgetLimit"
+                        @input="recalculate()"
+                        class="budget-slider w-full"
+                    />
+                    <div class="flex items-center justify-between text-sm text-[#3d557f]">
+                        <span>Cap: <strong x-text="formatCurrency(budgetLimit)"></strong></span>
+                        <span>Usage: <strong x-text="budgetUsagePercent + '%'"></strong></span>
+                    </div>
+                    <div class="meter-track">
+                        <div class="meter-fill" :class="meterToneClass" :style="`width: ${Math.min(budgetUsagePercent, 100)}%`"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel">
+                <h2 class="panel-title">Category breakdown</h2>
+                <p class="mt-2 text-sm text-[#4b5f89]">Estimated from visible entries using amount tiers.</p>
+                <div class="mt-4 space-y-3">
+                    <template x-for="row in breakdown" :key="row.name">
+                        <div>
+                            <div class="mb-1 flex items-center justify-between text-sm">
+                                <span class="font-semibold text-[#20345e]" x-text="row.name"></span>
+                                <span class="text-[#4d648e]" x-text="formatCurrency(row.amount)"></span>
+                            </div>
+                            <div class="h-2.5 rounded-full bg-[#dde7ff]">
+                                <div class="h-2.5 rounded-full bg-gradient-to-r from-[#2f6df5] to-[#19b8b3]" :style="`width: ${row.percent}%`"></div>
+                            </div>
+                        </div>
+                    </template>
+                    <p x-show="breakdown.length === 0" class="text-sm text-[#52668f]">No entries match the active filters.</p>
+                </div>
+            </div>
+
+            <div class="panel">
+                <h2 class="panel-title">Filters</h2>
+                <div class="mt-4 space-y-4">
+                    <div>
+                        <label class="field-label" for="search">Search</label>
+                        <input id="search" x-model="filters.search" class="field-input" placeholder="Merchant or notes" />
+                    </div>
+                    <div class="grid gap-4 sm:grid-cols-2">
+                        <div>
+                            <label class="field-label" for="category_filter">{{ config.category_label }}</label>
+                            <select id="category_filter" x-model="filters.category" class="field-input">
+                                <option value="all">All</option>
+                                {% for option in config.category_options %}
+                                <option value="{{ option }}">{{ option }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div>
+                            <label class="field-label" for="status_filter">{{ config.status_label }}</label>
+                            <select id="status_filter" x-model="filters.status" class="field-input">
+                                <option value="all">All</option>
+                                {% for option in config.status_options %}
+                                <option value="{{ option }}">{{ option }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="grid gap-4 sm:grid-cols-2">
+                        <div>
+                            <label class="field-label" for="completion_filter">Completion</label>
+                            <select id="completion_filter" x-model="filters.completion" class="field-input">
+                                <option value="all">All</option>
+                                <option value="open">Open</option>
+                                <option value="done">Done</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="field-label" for="sort_filter">Sort</label>
+                            <select id="sort_filter" x-model="filters.sortBy" @change="recalculate()" class="field-input">
+                                <option value="newest">Newest first</option>
+                                <option value="highest">Highest amount</option>
+                                <option value="nearest">Nearest date</option>
+                            </select>
+                        </div>
+                    </div>
+                    <label class="inline-flex items-center gap-3 text-sm text-[#455c88]">
+                        <input type="checkbox" x-model="filters.highSpendOnly" class="h-4 w-4 rounded border-[#b7cbf5] text-[#2f6df5] focus:ring-[#2f6df5]" />
+                        Show high-spend tiers only (4-5)
+                    </label>
+                </div>
+            </div>
+        </aside>
+
+        <div class="expense-grid grid gap-4 md:grid-cols-2 items-start content-start auto-rows-max self-start" data-expense-list>
+            {% if items %}
+                {% for item in items %}
+                <article
+                    class="item-card {% if item.is_done %}item-card-done{% endif %}"
+                    data-expense-card
+                    data-item-id="{{ item.id }}"
+                    data-title="{{ item.title|lower }}"
+                    data-description="{{ (item.description or '')|lower }}"
+                    data-category="{{ item.category }}"
+                    data-status="{{ item.status }}"
+                    data-priority="{{ item.priority }}"
+                    data-amount="{{ item.priority * 120 }}"
+                    data-target-date="{{ item.target_date.strftime('%Y-%m-%d') if item.target_date else '' }}"
+                    data-created-at="{{ item.created_at.isoformat() }}"
+                    data-completion="{{ 'done' if item.is_done else 'open' }}"
+                    x-show="matches($el.dataset)"
+                    x-transition
+                >
+                    <div class="flex items-start justify-between gap-3">
+                        <div>
+                            <span class="inline-block rounded-full bg-[#e6eeff] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[#375ba4]">{{ item.category }}</span>
+                            <h3 class="mt-2 text-xl font-semibold text-[#132849]">{{ item.title }}</h3>
+                            {% if item.description %}
+                            <p class="mt-2 text-sm text-[#39527e]">{{ item.description }}</p>
+                            {% endif %}
+                        </div>
+                        <div class="amount-pill">${{ item.priority * 120 }}</div>
+                    </div>
+
+                    <div class="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-[#deebff] pt-3 text-sm text-[#39527e]">
+                        <div class="space-y-1">
+                            <p>{{ config.status_label }}: {{ item.status }}</p>
+                            {% if item.target_date %}
+                            <p>{{ config.target_date_label }}: {{ item.target_date.strftime('%Y-%m-%d') }}</p>
+                            {% endif %}
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                            <button
+                                type="button"
+                                class="action-btn"
+                                data-toggle-btn
+                                @click="toggleExpense({{ item.id }}, $el)"
+                            >
+                                {% if item.is_done %}Reopen{% else %}Mark paid{% endif %}
+                            </button>
+                            <button
+                                type="button"
+                                class="action-btn danger-btn"
+                                data-delete-btn
+                                @click="deleteExpense({{ item.id }}, $el)"
+                            >
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                </article>
+                {% endfor %}
+            {% else %}
+                <div class="panel md:col-span-2 text-center" data-empty-state>
+                    <h3 class="font-display text-3xl text-[#11254a]">{{ config.empty_state_title }}</h3>
+                    <p class="mt-2 text-sm text-[#3d557f]">{{ config.empty_state_text }}</p>
+                </div>
+            {% endif %}
+        </div>
+    </section>
+</div>
+
+<script>
+    function expenseBoard() {
+        return {
+            filters: {
+                search: "",
+                category: "all",
+                status: "all",
+                completion: "all",
+                sortBy: "newest",
+                highSpendOnly: false,
+            },
+            summary: {
+                total: Number("{{ stats.total }}"),
+                paid: Number("{{ stats.completed }}"),
+                open: Number("{{ stats.in_progress }}"),
+            },
+            breakdown: [],
+            visibleBudget: 0,
+            budgetLimit: 2200,
+            pressureLabel: "Low",
+            init() {
+                this.$watch("filters.search", () => this.recalculate());
+                this.$watch("filters.category", () => this.recalculate());
+                this.$watch("filters.status", () => this.recalculate());
+                this.$watch("filters.completion", () => this.recalculate());
+                this.$watch("filters.sortBy", () => this.recalculate());
+                this.$watch("filters.highSpendOnly", () => this.recalculate());
+                this.recalculate();
+            },
+            get budgetUsagePercent() {
+                if (!this.budgetLimit) {
+                    return 0;
+                }
+                return Math.round((this.visibleBudget / this.budgetLimit) * 100);
+            },
+            get pressureToneClass() {
+                if (this.pressureLabel === "High") {
+                    return "budget-chip-high";
+                }
+                if (this.pressureLabel === "Moderate") {
+                    return "budget-chip-moderate";
+                }
+                return "budget-chip-low";
+            },
+            get meterToneClass() {
+                if (this.pressureLabel === "High") {
+                    return "meter-fill-high";
+                }
+                if (this.pressureLabel === "Moderate") {
+                    return "meter-fill-moderate";
+                }
+                return "meter-fill-low";
+            },
+            formatCurrency(value) {
+                return `$${Math.round(Number(value || 0))}`;
+            },
+            tierToAmount(priority) {
+                const tier = Math.max(1, Math.min(5, Number(priority || 1)));
+                return tier * 120;
+            },
+            matches(item) {
+                const text = `${item.title || ""} ${item.description || ""}`.toLowerCase();
+                const q = this.filters.search.trim().toLowerCase();
+                const searchOk = !q || text.includes(q);
+                const categoryOk = this.filters.category === "all" || this.filters.category === item.category;
+                const statusOk = this.filters.status === "all" || this.filters.status === item.status;
+                const completionOk = this.filters.completion === "all" || this.filters.completion === item.completion;
+                const highSpendOk = !this.filters.highSpendOnly || Number(item.priority || 0) >= 4;
+                return searchOk && categoryOk && statusOk && completionOk && highSpendOk;
+            },
+            parseCreatedAt(value) {
+                if (!value) {
+                    return 0;
+                }
+                return Date.parse(value) || 0;
+            },
+            parseTargetDate(value) {
+                if (!value) {
+                    return Number.POSITIVE_INFINITY;
+                }
+                const parsed = Date.parse(`${value}T00:00:00Z`);
+                return Number.isNaN(parsed) ? Number.POSITIVE_INFINITY : parsed;
+            },
+            sortCards(cards) {
+                const mode = this.filters.sortBy;
+                if (mode === "highest") {
+                    return cards.sort((a, b) => Number(b.dataset.amount || 0) - Number(a.dataset.amount || 0));
+                }
+                if (mode === "nearest") {
+                    return cards.sort((a, b) => this.parseTargetDate(a.dataset.targetDate) - this.parseTargetDate(b.dataset.targetDate));
+                }
+                return cards.sort((a, b) => this.parseCreatedAt(b.dataset.createdAt) - this.parseCreatedAt(a.dataset.createdAt));
+            },
+            recalculate() {
+                const list = document.querySelector("[data-expense-list]");
+                const cards = list ? Array.from(list.querySelectorAll("[data-expense-card]")) : [];
+
+                if (list && cards.length > 1) {
+                    const ordered = this.sortCards([...cards]);
+                    ordered.forEach((card) => list.appendChild(card));
+                }
+
+                const rows = cards
+                    .map((card) => card.dataset)
+                    .filter((dataset) => this.matches(dataset));
+
+                const grouped = {};
+                let total = 0;
+
+                rows.forEach((row) => {
+                    const amount = Number(row.amount || 0);
+                    total += amount;
+                    grouped[row.category] = (grouped[row.category] || 0) + amount;
+                });
+
+                this.visibleBudget = total;
+
+                const entries = Object.entries(grouped)
+                    .map(([name, amount]) => ({
+                        name,
+                        amount,
+                        percent: total ? Math.max(6, Math.round((amount / total) * 100)) : 0,
+                    }))
+                    .sort((a, b) => b.amount - a.amount);
+
+                this.breakdown = entries;
+
+                if (this.budgetUsagePercent < 55) {
+                    this.pressureLabel = "Low";
+                } else if (this.budgetUsagePercent < 85) {
+                    this.pressureLabel = "Moderate";
+                } else {
+                    this.pressureLabel = "High";
+                }
+
+                const allCards = Array.from(document.querySelectorAll("[data-expense-card]"));
+                const paid = allCards.filter((card) => card.dataset.completion === "done").length;
+                this.summary.total = allCards.length;
+                this.summary.paid = paid;
+                this.summary.open = allCards.length - paid;
+            },
+            async createItem(event) {
+                const formEl = event.target;
+                const formData = new FormData(formEl);
+                const payload = {
+                    title: String(formData.get("title") || "").trim(),
+                    description: String(formData.get("description") || "").trim() || null,
+                    category: String(formData.get("category") || ""),
+                    status: String(formData.get("status") || ""),
+                    priority: Number(formData.get("priority") || 3),
+                    target_date: String(formData.get("target_date") || "").trim() || null,
+                };
+
+                if (!payload.title) {
+                    return;
+                }
+
+                payload.priority = Math.max(1, Math.min(5, payload.priority || 3));
+
+                try {
+                    const response = await fetch("/api/items", {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify(payload),
+                    });
+                    if (!response.ok) {
+                        throw new Error("Create failed");
+                    }
+
+                    const created = await response.json();
+                    const list = document.querySelector("[data-expense-list]");
+                    if (!list) {
+                        return;
+                    }
+
+                    const emptyState = list.querySelector("[data-empty-state]");
+                    if (emptyState) {
+                        emptyState.remove();
+                    }
+
+                    const cardEl = this.buildCardElement(created);
+                    list.prepend(cardEl);
+
+                    if (window.Alpine && typeof window.Alpine.initTree === "function") {
+                        window.Alpine.initTree(cardEl);
+                    }
+
+                    formEl.reset();
+                    const priorityInput = formEl.querySelector("#priority");
+                    if (priorityInput) {
+                        priorityInput.value = "3";
+                    }
+
+                    this.recalculate();
+                    this.refreshFilterBindings();
+                } catch (error) {
+                    console.error(error);
+                    window.alert("Failed to create expense entry. Please try again.");
+                }
+            },
+            async toggleExpense(itemId, triggerEl) {
+                const cardEl = triggerEl.closest("article[data-item-id]");
+                if (!cardEl || cardEl.dataset.busy === "1") {
+                    return;
+                }
+
+                cardEl.dataset.busy = "1";
+
+                try {
+                    const response = await fetch(`/api/items/${itemId}/toggle`, {
+                        method: "PATCH",
+                    });
+                    if (!response.ok) {
+                        throw new Error("Toggle failed");
+                    }
+
+                    const updated = await response.json();
+                    const done = Boolean(updated.is_done);
+                    cardEl.dataset.completion = done ? "done" : "open";
+                    cardEl.classList.toggle("item-card-done", done);
+
+                    const toggleBtn = cardEl.querySelector("[data-toggle-btn]");
+                    if (toggleBtn) {
+                        toggleBtn.textContent = done ? "Reopen" : "Mark paid";
+                    }
+
+                    this.recalculate();
+                    this.refreshFilterBindings();
+                } catch (error) {
+                    console.error(error);
+                    window.alert("Failed to update payment state.");
+                } finally {
+                    cardEl.dataset.busy = "0";
+                }
+            },
+            async deleteExpense(itemId, triggerEl) {
+                const cardEl = triggerEl.closest("article[data-item-id]");
+                if (!cardEl || cardEl.dataset.busy === "1") {
+                    return;
+                }
+
+                if (!window.confirm("Delete this expense entry permanently?")) {
+                    return;
+                }
+
+                cardEl.dataset.busy = "1";
+
+                try {
+                    const response = await fetch(`/api/items/${itemId}`, {
+                        method: "DELETE",
+                    });
+                    if (!response.ok) {
+                        throw new Error("Delete failed");
+                    }
+
+                    cardEl.remove();
+                    this.recalculate();
+                    this.refreshFilterBindings();
+
+                    const list = document.querySelector("[data-expense-list]");
+                    if (list && list.querySelectorAll("[data-expense-card]").length === 0) {
+                        const empty = document.createElement("div");
+                        empty.className = "panel md:col-span-2 text-center";
+                        empty.dataset.emptyState = "1";
+                        empty.innerHTML = `
+                            <h3 class="font-display text-3xl text-[#11254a]">{{ config.empty_state_title }}</h3>
+                            <p class="mt-2 text-sm text-[#3d557f]">{{ config.empty_state_text }}</p>
+                        `;
+                        list.appendChild(empty);
+                    }
+                } catch (error) {
+                    console.error(error);
+                    window.alert("Failed to delete expense entry.");
+                }
+            },
+            buildCardElement(item) {
+                const note = String(item.description || "");
+                const safeTitle = this.escapeHtml(item.title || "");
+                const safeDescription = this.escapeHtml(note).replaceAll("\n", "<br>");
+                const safeCategory = this.escapeHtml(item.category || "");
+                const safeStatus = this.escapeHtml(item.status || "");
+                const safeTargetDate = this.escapeHtml(item.target_date || "");
+                const safeCreatedAt = this.escapeHtml(item.created_at || "");
+                const priority = Number(item.priority || 3);
+                const amount = this.tierToAmount(priority);
+                const done = Boolean(item.is_done);
+
+                const cardEl = document.createElement("article");
+                cardEl.className = `item-card${done ? " item-card-done" : ""}`;
+                cardEl.dataset.expenseCard = "1";
+                cardEl.dataset.itemId = String(item.id);
+                cardEl.dataset.title = String(item.title || "").toLowerCase();
+                cardEl.dataset.description = note.toLowerCase();
+                cardEl.dataset.category = String(item.category || "");
+                cardEl.dataset.status = String(item.status || "");
+                cardEl.dataset.priority = String(priority);
+                cardEl.dataset.amount = String(amount);
+                cardEl.dataset.targetDate = String(item.target_date || "");
+                cardEl.dataset.createdAt = String(item.created_at || "");
+                cardEl.dataset.completion = done ? "done" : "open";
+                cardEl.setAttribute("x-show", "matches($el.dataset)");
+                cardEl.setAttribute("x-transition", "");
+
+                cardEl.innerHTML = `
+                    <div class="flex items-start justify-between gap-3">
+                        <div>
+                            <span class="inline-block rounded-full bg-[#e6eeff] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[#375ba4]">${safeCategory}</span>
+                            <h3 class="mt-2 text-xl font-semibold text-[#132849]">${safeTitle}</h3>
+                            ${safeDescription ? `<p class="mt-2 text-sm text-[#39527e]">${safeDescription}</p>` : ""}
+                        </div>
+                        <div class="amount-pill">${this.formatCurrency(amount)}</div>
+                    </div>
+
+                    <div class="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-[#deebff] pt-3 text-sm text-[#39527e]">
+                        <div class="space-y-1">
+                            <p>{{ config.status_label }}: ${safeStatus}</p>
+                            ${safeTargetDate ? `<p>{{ config.target_date_label }}: ${safeTargetDate}</p>` : ""}
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                            <button type="button" class="action-btn" data-toggle-btn>${done ? "Reopen" : "Mark paid"}</button>
+                            <button type="button" class="action-btn danger-btn" data-delete-btn>Delete</button>
+                        </div>
+                    </div>
+                `;
+
+                const toggleBtn = cardEl.querySelector("[data-toggle-btn]");
+                if (toggleBtn) {
+                    toggleBtn.addEventListener("click", () => this.toggleExpense(item.id, toggleBtn));
+                }
+
+                const deleteBtn = cardEl.querySelector("[data-delete-btn]");
+                if (deleteBtn) {
+                    deleteBtn.addEventListener("click", () => this.deleteExpense(item.id, deleteBtn));
+                }
+
+                if (!safeCreatedAt) {
+                    cardEl.dataset.createdAt = new Date().toISOString();
+                }
+
+                return cardEl;
+            },
+            escapeHtml(value) {
+                return String(value)
+                    .replaceAll("&", "&amp;")
+                    .replaceAll("<", "&lt;")
+                    .replaceAll(">", "&gt;")
+                    .replaceAll('"', "&quot;")
+                    .replaceAll("'", "&#039;");
+            },
+            refreshFilterBindings() {
+                this.filters = { ...this.filters };
+            },
+        };
+    }
+</script>
+{% endblock %}

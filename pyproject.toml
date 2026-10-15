@@ -1,0 +1,13 @@
+[project]
+name = "fastapi-expensetracker"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.143.1",
+    "uvicorn[standard]>=0.54.0",
+    "SQLAlchemy>=2.0.32",
+    "Jinja2>=3.1.5",
+    "python-multipart>=0.0.32"
+]
