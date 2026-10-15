@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Expense Tracker{% endblock %} · Expense Tracker</title>
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="{% block body_class %}{% endblock %}">
+  <header class="topbar">
+    <a class="brand" href="{{ url_for('index') }}">
+      <img src="{{ url_for('static', filename='favicon.svg') }}" alt="" width="28" height="28">
+      <span>Expense Tracker</span>
+    </a>
+    {% if user_name %}
+    <nav aria-label="Main">
+      <a href="{{ url_for('dashboard') }}" {% if request.endpoint == 'dashboard' %}aria-current="page"{% endif %}>Dashboard</a>
+      <a href="{{ url_for('tools') }}" {% if request.endpoint == 'tools' %}aria-current="page"{% endif %}>Tools</a>
+      <a href="{{ api_docs_url }}" target="_blank" rel="noopener">API docs</a>
+    </nav>
+    <form method="post" action="{{ url_for('logout') }}" class="whoami">
+      <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+      <span class="muted">{{ user_name }}</span>
+      <button class="btn btn-quiet" type="submit">Log out</button>
+    </form>
+    {% endif %}
+  </header>
+
+  <main class="page">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+      <div class="flashes" role="status">
+        {% for category, message in messages %}<p class="flash flash-{{ category }}">{{ message }}</p>{% endfor %}
+      </div>
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="footer muted">FastAPI backend · Flask frontend · data lives behind the API</footer>
+</body>
+</html>

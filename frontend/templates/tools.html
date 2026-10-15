@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf %}
+{% block title %}Tools{% endblock %}
+{% block content %}
+<div class="columns tools">
+  <section class="card">
+    <h2>Currency converter</h2>
+    <p class="muted">Live rates from a third-party API, cached by the backend for an hour.</p>
+
+    <form method="get" class="add-form">
+      <label class="field"><span>Amount</span><input type="number" name="amount" step="0.01" min="0.01" required value="{{ request.args.get('amount', '100') }}"></label>
+      <label class="field"><span>From</span>
+        <select name="from">{% for c in CURRENCIES %}<option {{ 'selected' if c == request.args.get('from', currency) }}>{{ c }}</option>{% endfor %}</select></label>
+      <label class="field"><span>To</span>
+        <select name="to">{% for c in CURRENCIES %}<option {{ 'selected' if c == request.args.get('to', 'EUR') }}>{{ c }}</option>{% endfor %}</select></label>
+      <button class="btn btn-primary" type="submit">Convert</button>
+    </form>
+
+    {% if converted %}
+      <p class="result"><strong>{{ '{:,.2f}'.format(converted.amount) }} {{ converted.from_currency }}</strong> =
+        <strong>{{ '{:,.2f}'.format(converted.converted) }} {{ converted.to_currency }}</strong>
+        <span class="muted small">at {{ converted.rate }} · {{ 'served from cache' if converted.cached else 'fetched live' }}</span></p>
+    {% elif convert_error %}<p class="flash flash-error">{{ convert_error }}</p>{% endif %}
+
+    <h3>1 {{ currency }} today</h3>
+    {% if rates %}
+      <table class="rates">
+        <tbody>{% for code, rate in rates.rates.items() %}<tr><td>{{ code }}</td><td class="num">{{ '{:,.4f}'.format(rate) }}</td></tr>{% endfor %}</tbody>
+      </table>
+      <p class="muted small">{{ 'Cached response' if rates.cached else 'Live response' }}{% if rates.provider_updated %} · provider updated {{ rates.provider_updated }}{% endif %}</p>
+    {% else %}<p class="flash flash-error">{{ rates_error }}</p>{% endif %}
+  </section>
+
+  <section class="card">
+    <h2>Page crawler</h2>
+    <p class="muted">Paste up to five product or receipt page URLs, one per line. The API fetches them concurrently and pulls out titles and prices.</p>
+    <form method="post" class="stack">
+      {{ csrf() }}
+      <label class="field"><span>URLs</span>
+        <textarea name="urls" rows="4" placeholder="https://example.com/product">{{ urls_text }}</textarea></label>
+      <button class="btn btn-primary" type="submit">Crawl pages</button>
+    </form>
+
+    {% if crawl_results %}
+    <ul class="crawl">
+      {% for r in crawl_results %}
+      <li class="{{ 'crawl-ok' if r.ok else 'crawl-bad' }}">
+        <p class="crawl-url">{{ r.url }}</p>
+        {% if r.ok %}
+          <p class="title">{{ r.title or '(no title)' }}</p>
+          {% if r.description %}<p class="muted">{{ r.description }}</p>{% endif %}
+          {% if r.price_hints %}<p>Prices found: {% for p in r.price_hints %}<span class="chip">{{ p }}</span> {% endfor %}</p>{% endif %}
+          <p class="muted small">{{ r.link_count }} links · HTTP {{ r.status_code }}</p>
+        {% else %}<p class="over">{{ r.error }}</p>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

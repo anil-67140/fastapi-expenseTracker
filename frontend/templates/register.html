@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf, field %}
+{% block title %}Create account{% endblock %}
+{% block body_class %}auth{% endblock %}
+{% block content %}
+<section class="card auth-card">
+  <h1>Create your account</h1>
+  <p class="muted">Passwords are hashed with Argon2 on the API. You get a JWT when you sign up.</p>
+  <form method="post" class="stack">
+    {{ csrf() }}
+    {{ field("Full name", "full_name", "text", form.get("full_name", ""), extra='autocomplete="name" autofocus') }}
+    {{ field("Email", "email", "email", form.get("email", ""), extra='autocomplete="email"') }}
+    {{ field("Password (8+ characters)", "password", "password", "", extra='minlength="8" autocomplete="new-password"') }}
+    <button class="btn btn-primary" type="submit">Create account</button>
+  </form>
+  <p class="muted small">Already registered? <a href="{{ url_for('login') }}">Log in</a></p>
+</section>
+{% endblock %}

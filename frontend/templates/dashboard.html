@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf, category_select %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+{% set cur = stats.currency %}
+
+<section class="card hero" aria-labelledby="hero-title">
+  <div class="hero-main">
+    <form method="get" class="month-form">
+      <label for="month" class="muted">Month</label>
+      <input type="month" id="month" name="month" value="{{ stats.month }}">
+      <button class="btn btn-quiet" type="submit">Show</button>
+    </form>
+    <h1 id="hero-title" class="sr-only">Budget for {{ stats.month|month_label }}</h1>
+    <p class="figure">{{ stats.total_spent|money(cur) }}</p>
+    <p class="figure-sub">spent in {{ stats.month|month_label }} of a {{ stats.monthly_budget|money(cur) }} budget</p>
+
+    <div class="gauge {{ 'gauge-over' if stats.over_budget }}" role="meter" aria-label="Budget used"
+         aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ [stats.budget_used_percent, 100]|min }}">
+      <div class="gauge-paid" style="width: {{ '%.1f'|format(paid_pct) }}%"></div>
+      <div class="gauge-pending" style="width: {{ '%.1f'|format(pending_pct) }}%"></div>
+    </div>
+    <ul class="legend">
+      <li><span class="swatch swatch-paid"></span>Paid {{ stats.paid_total|money(cur) }}</li>
+      <li><span class="swatch swatch-pending"></span>Pending {{ stats.pending_total|money(cur) }}</li>
+      <li class="{{ 'over' if stats.over_budget else 'ok' }}">
+        {% if stats.over_budget %}Over budget by {{ (-remaining)|money(cur) }}{% else %}{{ remaining|money(cur) }} left · {{ stats.budget_used_percent }}% used{% endif %}
+      </li>
+    </ul>
+  </div>
+
+  <form method="post" action="{{ url_for('update_settings') }}" class="hero-settings stack">
+    {{ csrf() }}
+    <label class="field"><span>Monthly budget</span>
+      <input type="number" name="monthly_budget" step="0.01" min="0.01" value="{{ '%.2f'|format(stats.monthly_budget) }}" required></label>
+    <label class="field"><span>Currency</span>
+      <select name="currency">{% for c in CURRENCIES %}<option {{ 'selected' if c == cur }}>{{ c }}</option>{% endfor %}</select></label>
+    <button class="btn" type="submit">Save budget</button>
+  </form>
+</section>
+
+<div class="columns">
+  <div class="col-main">
+    <section class="card" aria-labelledby="add-title">
+      <h2 id="add-title">Add an expense</h2>
+      <form method="post" action="{{ url_for('create_expense') }}" class="add-form">
+        {{ csrf() }}
+        <label class="field grow"><span>Title</span><input name="title" maxlength="140" required placeholder="Groceries"></label>
+        <label class="field"><span>Amount</span><input name="amount" type="number" step="0.01" min="0.01" required placeholder="0.00"></label>
+        <label class="field"><span>Category</span>{{ category_select("other", "add-category") }}</label>
+        <label class="field"><span>Date</span><input name="expense_date" type="date" value="{{ today }}"></label>
+        <label class="field"><span>Status</span>
+          <select name="status"><option value="pending">Pending</option><option value="paid">Paid</option></select></label>
+        <label class="field grow"><span>Notes (optional)</span><input name="notes" maxlength="500"></label>
+        <button class="btn btn-primary" type="submit">Add expense</button>
+      </form>
+    </section>
+
+    <section class="card" aria-labelledby="ledger-title">
+      <div class="ledger-head">
+        <h2 id="ledger-title">Expenses <span class="muted">({{ page.total }})</span></h2>
+        <a class="btn btn-quiet" href="{{ url_for('export_csv') }}">Download CSV</a>
+      </div>
+
+      <form method="get" class="filters">
+        {% if filters.get('month') %}<input type="hidden" name="month" value="{{ filters.get('month') }}">{% endif %}
+        <label class="field grow"><span>Search</span><input type="search" name="q" value="{{ filters.get('q', '') }}" placeholder="Title or notes"></label>
+        <label class="field"><span>Category</span>
+          <select name="category"><option value="">All</option>
+            {% for c in CATEGORIES %}<option value="{{ c }}" {{ 'selected' if filters.get('category') == c }}>{{ c|label }}</option>{% endfor %}</select></label>
+        <label class="field"><span>Status</span>
+          <select name="status"><option value="">All</option>
+            <option value="pending" {{ 'selected' if filters.get('status') == 'pending' }}>Pending</option>
+            <option value="paid" {{ 'selected' if filters.get('status') == 'paid' }}>Paid</option></select></label>
+        <label class="field"><span>Sort</span>
+          <select name="sort">{% for key, text in sorts.items() %}<option value="{{ key }}" {{ 'selected' if filters.get('sort', 'newest') == key }}>{{ text }}</option>{% endfor %}</select></label>
+        <label class="field narrow"><span>Min</span><input type="number" name="min_amount" step="0.01" min="0" value="{{ filters.get('min_amount', '') }}"></label>
+        <label class="field narrow"><span>Max</span><input type="number" name="max_amount" step="0.01" min="0" value="{{ filters.get('max_amount', '') }}"></label>
+        <button class="btn" type="submit">Apply</button>
+        <a class="btn btn-quiet" href="{{ url_for('dashboard') }}">Reset</a>
+      </form>
+
+      {% if page["items"] %}
+      <div class="table-wrap">
+        <table class="ledger">
+          <thead><tr><th>Date</th><th>Expense</th><th class="num">Amount</th><th>Status</th><th><span class="sr-only">Actions</span></th></tr></thead>
+          <tbody>
+          {% for e in page["items"] %}
+            <tr>
+              <td class="date">{{ e.expense_date|short_date }}</td>
+              <td>
+                <div class="title">{{ e.title }}</div>
+                <div class="sub"><span class="chip">{{ e.category|label }}</span>
+                  {% if e.notes %}<span>{{ e.notes }}</span>{% endif %}
+                  {% if e.receipt_url %}<a href="{{ receipt_href(e.receipt_url) }}" target="_blank" rel="noopener">Receipt</a>{% endif %}</div>
+              </td>
+              <td class="num">{{ e.amount|money(cur) }}</td>
+              <td>
+                <form method="post" action="{{ url_for('toggle_expense', expense_id=e.id) }}">
+                  {{ csrf() }}
+                  <button class="pill pill-{{ e.status }}" type="submit"
+                          title="Mark as {{ 'pending' if e.status == 'paid' else 'paid' }}">{{ e.status|label }}</button>
+                </form>
+              </td>
+              <td class="actions">
+                <a href="{{ url_for('edit_expense', expense_id=e.id) }}">Edit</a>
+                <form method="post" action="{{ url_for('delete_expense', expense_id=e.id) }}" onsubmit="return confirm('Delete “{{ e.title|e }}”?')">
+                  {{ csrf() }}<button class="link danger" type="submit">Delete</button>
+                </form>
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <nav class="pager" aria-label="Pagination">
+        {% if page.has_prev %}<a class="btn btn-quiet" href="{{ page_url(page.page - 1) }}">Previous</a>{% else %}<span></span>{% endif %}
+        <span class="muted">Page {{ page.page }} of {{ page.pages }}</span>
+        {% if page.has_next %}<a class="btn btn-quiet" href="{{ page_url(page.page + 1) }}">Next</a>{% else %}<span></span>{% endif %}
+      </nav>
+      {% else %}
+      <p class="empty">No expenses match. Add one above, or reset the filters.</p>
+      {% endif %}
+    </section>
+  </div>
+
+  <aside class="col-side">
+    <section class="card">
+      <h2>By category</h2>
+      {% if stats.by_category %}
+      <ul class="bars">
+        {% for c in stats.by_category %}
+        <li>
+          <div class="bar-row"><span>{{ c.category|label }}</span><span class="num">{{ c.total|money(cur) }}</span></div>
+          <div class="bar"><div style="width: {{ '%.1f'|format(c.total / top_category * 100) }}%"></div></div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}<p class="empty">Nothing recorded in {{ stats.month|month_label }}.</p>{% endif %}
+    </section>
+
+    <section class="card">
+      <h2>Recent activity</h2>
+      {% if activity %}
+      <ul class="activity">
+        {% for a in activity %}<li><span>{{ a.action|label }} {{ a.entity }}{% if a.entity_id %} #{{ a.entity_id }}{% endif %}</span><span class="muted small">{{ a.created_at|short_dt }}</span></li>{% endfor %}
+      </ul>
+      {% else %}<p class="empty">Actions you take will be logged here.</p>{% endif %}
+    </section>
+  </aside>
+</div>
+{% endblock %}

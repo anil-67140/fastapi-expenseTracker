@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf, category_select %}
+{% block title %}Edit expense{% endblock %}
+{% block content %}
+<section class="card narrow-card">
+  <h1>Edit expense</h1>
+  <form method="post" class="stack">
+    {{ csrf() }}
+    <label class="field"><span>Title</span><input name="title" maxlength="140" value="{{ expense.title }}" required></label>
+    <div class="row">
+      <label class="field"><span>Amount</span><input name="amount" type="number" step="0.01" min="0.01" value="{{ '%.2f'|format(expense.amount) }}" required></label>
+      <label class="field"><span>Date</span><input name="expense_date" type="date" value="{{ expense.expense_date }}" required></label>
+    </div>
+    <div class="row">
+      <label class="field"><span>Category</span>{{ category_select(expense.category, "edit-category") }}</label>
+      <label class="field"><span>Status</span>
+        <select name="status">
+          <option value="pending" {{ 'selected' if expense.status == 'pending' }}>Pending</option>
+          <option value="paid" {{ 'selected' if expense.status == 'paid' }}>Paid</option>
+        </select></label>
+    </div>
+    <label class="field"><span>Notes</span><textarea name="notes" maxlength="500" rows="3">{{ expense.notes or '' }}</textarea></label>
+    <div class="row">
+      <button class="btn btn-primary" type="submit">Save changes</button>
+      <a class="btn btn-quiet" href="{{ url_for('dashboard') }}">Cancel</a>
+    </div>
+  </form>
+</section>
+
+<section class="card narrow-card">
+  <h2>Receipt</h2>
+  {% if expense.receipt_url %}
+    {% set href = receipt_href(expense.receipt_url) %}
+    {% if href.endswith('.pdf') %}
+      <p><a href="{{ href }}" target="_blank" rel="noopener">Open the attached PDF</a></p>
+    {% else %}
+      <a href="{{ href }}" target="_blank" rel="noopener"><img class="receipt" src="{{ href }}" alt="Receipt for {{ expense.title }}"></a>
+    {% endif %}
+  {% else %}<p class="empty">No receipt attached yet.</p>{% endif %}
+  <form method="post" action="{{ url_for('upload_receipt', expense_id=expense.id) }}" enctype="multipart/form-data" class="stack">
+    {{ csrf() }}
+    <label class="field"><span>{{ 'Replace receipt' if expense.receipt_url else 'Attach a receipt' }} (JPG, PNG, WebP or PDF, up to 5 MB)</span>
+      <input type="file" name="receipt" accept="image/jpeg,image/png,image/webp,application/pdf" required></label>
+    <button class="btn" type="submit">Upload</button>
+  </form>
+</section>
+{% endblock %}

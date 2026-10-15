@@ -1,0 +1,41 @@
+# Render Blueprint: deploys the FastAPI API and the Flask web app as two services.
+# Docs: https://render.com/docs/blueprint-spec
+services:
+  # ---------------------------------------------------------------- FastAPI
+  - type: web
+    name: expense-tracker-api
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    # --proxy-headers lets the app see the real visitor IP behind Render's proxy (used by the rate limiter).
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips="*"
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: ENVIRONMENT
+        value: production
+      - key: SECRET_KEY
+        generateValue: true # Render creates a random secret for you
+      - key: CORS_ORIGINS
+        sync: false # you are prompted: the public URL of the Flask app
+      # Optional: set DATABASE_URL to a Postgres URL to keep data across deploys.
+      # Without it the API uses SQLite on Render's temporary disk (data resets on each deploy).
+
+  # ------------------------------------------------------------------ Flask
+  - type: web
+    name: expense-tracker-web
+    runtime: python
+    rootDir: frontend
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 60
+    healthCheckPath: /login
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: ENVIRONMENT
+        value: production
+      - key: SECRET_KEY
+        generateValue: true
+      - key: API_URL
+        sync: false # you are prompted: the public URL of the API service, e.g. https://expense-tracker-api.onrender.com

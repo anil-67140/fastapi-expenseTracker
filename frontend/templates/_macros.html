@@ -1,0 +1,14 @@
+{% macro csrf() %}<input type="hidden" name="_csrf" value="{{ csrf_token() }}">{% endmacro %}
+
+{% macro category_select(selected="other", id="category") %}
+<select name="category" id="{{ id }}">
+  {% for c in CATEGORIES %}<option value="{{ c }}" {{ "selected" if c == selected }}>{{ c|label }}</option>{% endfor %}
+</select>
+{% endmacro %}
+
+{% macro field(label, name, type="text", value="", required=True, extra="") %}
+<label class="field">
+  <span>{{ label }}</span>
+  <input type="{{ type }}" name="{{ name }}" value="{{ value }}" {{ "required" if required }} {{ extra|safe }}>
+</label>
+{% endmacro %}
